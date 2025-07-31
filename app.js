@@ -62,7 +62,6 @@ function addAlert(quake) {
 async function pollEarthquakes(settings) {
   const { minMagnitude, latitude, longitude, radius } = settings;
 
-  // Use current time minus 1 minute as start to catch recent events
   const now = new Date();
   let startTime = lastEventTime || new Date(now.getTime() - 60000);
 
@@ -73,10 +72,8 @@ async function pollEarthquakes(settings) {
       addAlert(q);
       notifyUser('Earthquake Alert!', `M${q.properties.mag.toFixed(1)} near ${q.properties.place}`);
     });
-    // Update lastEventTime to the latest quake time
     lastEventTime = new Date(quakes[0].properties.time);
   } else {
-    // Update lastEventTime anyway to now to prevent refetching old data
     lastEventTime = now;
   }
 }
@@ -97,10 +94,8 @@ function startMonitoring() {
 
   const settings = { minMagnitude, latitude, longitude, radius };
 
-  // Immediately poll once
   pollEarthquakes(settings);
 
-  // Poll every 60 seconds
   pollingInterval = setInterval(() => pollEarthquakes(settings), 60000);
 
   startBtn.disabled = true;
