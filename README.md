@@ -1,79 +1,95 @@
-Deployment Using Docker Playground
+Earthquake Alert Notifier
+Overview
 
-To simulate a realistic deployment environment with multiple servers, I used Docker Playground, which provides temporary cloud-based Docker virtual machines. This allowed me to set up and test the application across a basic three-node infrastructure.
-Infrastructure Overview
+Earthquake Alert Notifier is a containerized web application that allows users to monitor real-time earthquake activity using configurable input such as magnitude, geographic coordinates, and search radius. The application fetches data from a public earthquake API and notifies users through browser alerts.
+Features
 
-The deployment environment consists of the following three nodes:
+    Live earthquake monitoring based on user-defined criteria.
 
-    web-01: Runs one instance of the containerized application.
+    Display of recent earthquakes with details like location, magnitude, and time.
 
-    web-02: Runs a second instance of the same application.
+    Browser notifications for new events.
 
-    lb-01: Acts as a load balancer, using HAProxy to distribute traffic between web-01 and web-02.
+    Clean, responsive UI built with plain HTML, CSS, and JavaScript.
 
-Each node is a separate instance within Docker Playground and is connected through a private network, allowing internal IP-based communication between the containers.
-Application Deployment on web-01 and web-02
+API Used
 
-On both web-01 and web-02, I performed the following steps:
+This app uses the USGS Earthquake API to query recent seismic activity.
+The frontend uses JavaScript’s fetch() to call the API and extract earthquakes that match:
 
-    Pulled the Docker image from Docker Hub:
+    Minimum magnitude
 
-docker pull davymgr1/earthquake-noifier:v1
+    Latitude and longitude
 
-Started the application container on each node:
+    Radius (in kilometers)
 
-docker run -d --name earthquake-app -p 8080:80 davymgr1/earthquake-noifier:v1
+    Start time (default: last minute)
 
-Modified the index.html file within each container to identify which node was serving the content. This was done to visually confirm that HAProxy was properly distributing traffic:
+API data is returned in GeoJSON format and parsed in app.js.
+Deployment Architecture
 
-    On web-01:
+This application is containerized and can be deployed on multiple hosts with load balancing:
 
-docker exec -it earthquake-app sh -c 'echo "<h1>Served by WEB-01</h1>" >> /usr/share/nginx/html/index.html'
+    Web Server Nodes (web01, web02, etc.): Run individual app containers.
 
-On web-02:
+    Load Balancer (lb01): HAProxy routes incoming traffic to the app instances.
 
-        docker exec -it earthquake-app sh -c 'echo "<h1>Served by WEB-02</h1>" >> /usr/share/nginx/html/index.html'
+Running the App with Docker
+1. Create Dockerfile
 
-Each container successfully served the modified HTML file on port 8080, confirming they were running independently.
-HAProxy Setup on lb-01
+Place this in a file named Dockerfile alongside your app files:
 
-On the lb-01 node, I installed and configured HAProxy to act as a load balancer.
+FROM nginx:alpine
 
-    Installed HAProxy (on Alpine-based instances):
+RUN rm -rf /usr/share/nginx/html/*
+COPY index.html /usr/share/nginx/html/
+COPY style.css /usr/share/nginx/html/
+COPY app.js /usr/share/nginx/html/
 
-apk add haproxy
+EXPOSE 80
+CMD ["nginx", "-g", "daemon off;"]
 
-Created the HAProxy configuration file (haproxy.cfg) with the following contents:
+2. Build the Docker Image
 
-global
-    daemon
-    maxconn 256
+docker build -t earthquake-notifier .
 
-defaults
-    mode http
-    timeout connect 5000ms
-    timeout client  50000ms
-    timeout server  50000ms
+3. Run the Container
+
+docker run -d --name earthquake-app -p 8080:80 earthquake-notifier
+
+Pushing to Docker Hub (Optional)
+
+If desired, tag your image and push it to Docker Hub:
+
+docker tag earthquake-notifier yourusername/earthquake-notifier:latest
+docker push yourusername/earthquake-notifier:latest
+
+Load Balancing with HAProxy
+
+To enable high availability, deploy your app on multiple Docker nodes and route traffic through a load balancer.
+Sample HAProxy Configuration (haproxy.cfg):
 
 frontend http-in
-    bind *:80
+    bind *:8080
     default_backend webapps
 
 backend webapps
     balance roundrobin
-    server web01 192.168.0.29:8080 check
-    server web02 192.168.0.30:8080 check
+    server web01 192.168.0.11:8080 check
+    server web02 192.168.0.12:8080 check
 
-    Note: The IP addresses (192.168.0.29, 192.168.0.30) were obtained by running ip addr show eth0 on each web node and identifying their private network IPs.
+    Replace IP addresses with your actual container or VM IPs.
 
-Launched HAProxy using the custom configuration:
+    Ensure each web node is running the container and exposed on the correct port.
 
-    haproxy -f haproxy.cfg
+Reload HAProxy:
 
-Testing the Load Balancer
+docker exec -it lb-01 sh -c 'haproxy -sf $(pidof haproxy) -f /usr/local/etc/haproxy/haproxy.cfg'
 
-To verify the configuration, I sent multiple HTTP requests from the lb-01 node using curl:
+Testing Load Balancing
 
-curl http://localhost
+From your load balancer node or host:
 
-The responses alternated between the modified HTML from web-01 and web-02, confirming that HAProxy was successfully load balancing traffic between both instances using the round-robin method.
+curl http://localhost:8080
+
+Repeat multiple times — responses should alternate between web servers.
